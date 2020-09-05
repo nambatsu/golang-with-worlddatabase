@@ -57,6 +57,10 @@ func main() {
 	withlogin := e.Group("")
 	withlogin.Use(checkLogin)
 	withlogin.GET("/cities/:cityName", getCityInfoHandler)
+	withlogin.GET("/countryname", getCountryNameInfoHandler)
+	withlogin.GET("/cityname/:countrycode", getCityNameInfohandler)
+	withlogin.GET("/logout", LogoutHandler)
+	withlogin.GET("/whoami", getWhoAmIHandler)
 
 	e.Start(":14000")
 }
@@ -69,6 +73,64 @@ type LoginRequestBody struct {
 type User struct {
 	Username   string `json:"username,omitempty" db:"Username"`
 	HashedPass string `json:"-" db:"HashedPass"`
+}
+
+type Me struct {
+	Username string `json:"username,omitempty" db:"Username"`
+}
+
+type Country struct {
+	Countryname string `json:"countryname,omitempty" db:"name"`
+	CountryCode string `json:"countrycode,omitempty" db:"CountryCode"`
+}
+
+type Cityname struct {
+	Cityname string `json:"cityname,omitemoty" db:"name"`
+}
+
+func LogoutHandler(c echo.Context) error {
+	sess, err := session.Get("sessions", c)
+	if err != nil {
+		fmt.Println(err)
+		return c.String(http.StatusInternalServerError, "something wrong in getting session")
+	}
+	sess.Values["userName"] = nil
+	sess.Save(c.Request(), c.Response())
+	fmt.Println("Logout!")
+
+	return c.NoContent(http.StatusOK)
+
+}
+
+func getCityNameInfohandler(c echo.Context) error {
+	countrycode := c.Param("countrycode")
+	var cities []*Cityname
+	rows, _ := db.Query("SELECT Name FROM city WHERE CountryCode=?", countrycode)
+	defer rows.Close()
+	for rows.Next() {
+		city := &Cityname{}
+		rows.Scan(&city.Cityname)
+		cities = append(cities, city)
+	}
+	return c.JSON(http.StatusOK, cities)
+}
+
+func getCountryNameInfoHandler(c echo.Context) error {
+	var countries []*Country
+	rows, _ := db.Query("SELECT name,code FROM country")
+	defer rows.Close()
+	for rows.Next() {
+		country := &Country{}
+		rows.Scan(&country.Countryname, &country.CountryCode)
+		countries = append(countries, country)
+	}
+	return c.JSON(http.StatusOK, countries)
+}
+
+func getWhoAmIHandler(c echo.Context) error {
+	return c.JSON(http.StatusOK, Me{
+		Username: c.Get("userName").(string),
+	})
 }
 
 func postSignUpHandler(c echo.Context) error {
@@ -115,6 +177,7 @@ func postLoginHandler(c echo.Context) error {
 	err = bcrypt.CompareHashAndPassword([]byte(user.HashedPass), []byte(req.Password))
 	if err != nil {
 		if err == bcrypt.ErrMismatchedHashAndPassword {
+			fmt.Println("???")
 			return c.NoContent(http.StatusForbidden)
 		} else {
 			return c.NoContent(http.StatusInternalServerError)
